@@ -104,6 +104,14 @@ private [chiseltest] class JNISimulatorContext(cmd: Seq[String], toplevel: Topmo
   override def pokeMemory(memory: String, index: Long, value: BigInt): Unit = {
     throw new NotImplementedError("pokeMemory")
   }
+
+  override def getCoverage(): List[(String, Long)] = {
+    throw new NotImplementedError("getCoverage")
+  }
+
+  override def resetCoverage(): Unit = {
+    throw new NotImplementedError("getCoverage")
+  }
 }
 
 class TesterSharedLib(libPath: String) {
