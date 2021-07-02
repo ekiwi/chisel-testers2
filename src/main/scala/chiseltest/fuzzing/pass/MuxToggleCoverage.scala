@@ -62,11 +62,13 @@ object MuxToggleCoverage extends Transform with DependencyAPIMigration {
         case ir.Reference(name, _, _, _) => name
         case _ => "mux_cond"
       }
-      val oneCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, cond, Utils.not(ctx.reset),
+      val node = ir.DefNode(ir.NoInfo, ctx.namespace.newName(name + "_s"), cond)
+      val nodeRef = ir.Reference(node)
+      val oneCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, nodeRef, Utils.not(ctx.reset),
         ir.StringLit(""), ctx.namespace.newName(name + "_one"))
-      val zeroCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, Utils.not(cond), Utils.not(ctx.reset),
+      val zeroCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, Utils.not(nodeRef), Utils.not(ctx.reset),
         ir.StringLit(""), ctx.namespace.newName(name + "_zero"))
-      List(oneCover, zeroCover)
+      List(node, oneCover, zeroCover)
     }
     (stmts, List())
   }
