@@ -61,13 +61,9 @@ private class TreadleContext(tester: TreadleTester) extends SimulatorContext {
     }
   }
 
-  override def peek(signal: String): BigInt = {
-    tester.peek(signal)
-  }
+  override def peek(signal: String): BigInt = tester.peek(signal)
 
-  override def poke(signal: String, value: BigInt): Unit = {
-    tester.poke(signal, value)
-  }
+  override def poke(signal: String, value: BigInt): Unit = tester.poke(signal, value)
 
   override def peekMemory(memory: String, index: Long): BigInt = {
     tester.peekMemory(memory, index.toInt)
@@ -82,11 +78,7 @@ private class TreadleContext(tester: TreadleTester) extends SimulatorContext {
     SimulatorResults(0)
   }
 
-  override def resetCoverage(): Unit = {
-    println("WARN: todo implement reset Coverage!")
-  }
+  override def resetCoverage(): Unit = tester.resetCoverage()
 
-  override def getCoverage():List[(String, Long)] = {
-    tester.getCoverage()
-  }
+  override def getCoverage():List[(String, Long)] = tester.getCoverage()
 }
