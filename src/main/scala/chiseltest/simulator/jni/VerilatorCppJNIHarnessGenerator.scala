@@ -179,6 +179,15 @@ JNIEXPORT void ${ApiPrefix}_finish(JNIEnv *env, jobject obj) {
   // TODO: dump waveform + coverage
 }
 
+JNIEXPORT void ${ApiPrefix}_resetCoverage(JNIEnv *env, jobject obj) {
+  VerilatedCov::zero();
+}
+
+JNIEXPORT void ${ApiPrefix}_writeCoverage(JNIEnv *env, jobject obj, jstring filename) {
+  const char *c_str = env->GetStringUTFChars(filename, NULL);
+  VerilatedCov::write(c_str);
+}
+
 JNIEXPORT void ${ApiPrefix}_poke(JNIEnv *env, jobject obj, jint id, jlong value) {
   sim_state *s = get_state(env, obj);
 
