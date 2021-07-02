@@ -12,7 +12,6 @@ import scala.collection.mutable
 
 // adds mux toggle coverage with a coverage statement
 // see: https://people.eecs.berkeley.edu/~laeufer/papers/rfuzz_kevin_laeufer_iccad2018.pdf
-// TODO: filter out duplicates!
 // TODO: this transform should build upon the standard toggle coverage pass once that is published + polished!
 object MuxToggleCoverage extends Transform with DependencyAPIMigration {
   override def prerequisites = Seq(
@@ -32,7 +31,10 @@ object MuxToggleCoverage extends Transform with DependencyAPIMigration {
   private def onModule(m: ir.DefModule, c: CircuitTarget, newAnnos: mutable.ListBuffer[Annotation]): ir.DefModule = m match {
     case mod: ir.Module =>
       val ctx = ModuleCtx(c.module(mod.name), Namespace(mod), newAnnos, findClock(mod), findReset(mod))
-      mod.mapStmt(onStmt(ctx, _))
+      val conds = findMuxConditions(mod)
+      val (stmts, annos) = coverToggle(ctx, conds)
+      assert(annos.isEmpty)
+      mod.copy(body = ir.Block(mod.body +: stmts))
     case other => other
   }
 
@@ -53,41 +55,40 @@ object MuxToggleCoverage extends Transform with DependencyAPIMigration {
   private case class ModuleCtx(m: ModuleTarget, namespace: Namespace, newAnnos: mutable.ListBuffer[Annotation],
     clock: ir.Expression, reset: ir.Expression)
 
-  private def onStmt(ctx: ModuleCtx, s: ir.Statement): ir.Statement = s match {
-    case ir.Block(stmts) => ir.Block(stmts.map(onStmt(ctx, _)))
-    case other =>
-      val stmts = mutable.ListBuffer[ir.Statement]()
-      val r = other.mapExpr(onExpr(ctx, stmts, _))
-      if(stmts.isEmpty) { r } else {
-        stmts.append(r)
-        ir.Block(stmts.toList)
+
+  private def coverToggle(ctx: ModuleCtx, conds: List[ir.Expression]): (List[ir.Statement], List[Annotation]) = {
+    val stmts = conds.flatMap { cond =>
+      val name = cond match {
+        case ir.Reference(name, _, _, _) => name
+        case _ => "mux_cond"
       }
-  }
-
-  private def onExpr(ctx: ModuleCtx, stmts: mutable.ListBuffer[ir.Statement], e: ir.Expression): ir.Expression =
-    e.mapExpr(onExpr(ctx, stmts, _)) match {
-      case m @ ir.Mux(cond, _, _, _) =>
-        // ensure that we get a reference to the condition (this avoids duplicated code)
-        val condRef = cond match {
-          case r: ir.Reference => r
-          case other =>
-            val node = ir.DefNode(ir.NoInfo, ctx.namespace.newName("mux_cond"), other)
-            stmts.append(node)
-            ir.Reference(node).copy(flow = SourceFlow)
-        }
-        coverToggle(ctx, stmts, condRef)
-        m.copy(cond = condRef)
-      case other => other
+      val oneCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, cond, Utils.not(ctx.reset),
+        ir.StringLit(""), ctx.namespace.newName(name + "_one"))
+      val zeroCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, Utils.not(cond), Utils.not(ctx.reset),
+        ir.StringLit(""), ctx.namespace.newName(name + "_zero"))
+      List(oneCover, zeroCover)
     }
-
-  private def coverToggle(ctx: ModuleCtx, stmts: mutable.ListBuffer[ir.Statement], cond: ir.Reference): Unit = {
-    // TODO: add annotation
-    val target = ctx.m.ref(cond.name)
-
-    val oneCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, cond, Utils.not(ctx.reset), ir.StringLit(""), ctx.namespace.newName(cond.name + "_one"))
-    stmts.append(oneCover)
-    val zeroCover = ir.Verification(ir.Formal.Cover, ir.NoInfo, ctx.clock, Utils.not(cond), Utils.not(ctx.reset), ir.StringLit(""), ctx.namespace.newName(cond.name + "_zero"))
-    stmts.append(zeroCover)
+    (stmts, List())
   }
 
+  // returns a list of unique (at least structurally unique!) mux conditions used in the module
+  private def findMuxConditions(m: ir.Module): List[ir.Expression] = {
+    val conds = mutable.LinkedHashMap[String, ir.Expression]()
+
+    def onStmt(s: ir.Statement): Unit = s match {
+      case ir.Block(stmts) => stmts.foreach(onStmt)
+      case other => other.foreachExpr(onExpr)
+    }
+    def onExpr(e: ir.Expression): Unit = {
+      e.foreachExpr(onExpr)
+      e match {
+        case ir.Mux(cond, _, _, _) =>
+          val key = cond.serialize
+          conds(key) = cond
+        case _ =>
+      }
+    }
+    onStmt(m.body)
+    conds.values.toList
+  }
 }
