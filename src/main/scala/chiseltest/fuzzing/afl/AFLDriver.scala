@@ -30,27 +30,77 @@
 
 package chiseltest.fuzzing.afl
 
+import chiseltest.fuzzing.{FuzzTarget, Rfuzz}
+
+import java.io.{InputStream, OutputStream}
+
 /** Provides a main function that can be used to interface with the AFL fuzzer.
  *
- *  Based on code written by Rohan Padhye for the JQF project
+ *  Based on code written by Rohan Padhye and Caroline Lemieux for the JQF project
  * */
 object AFLDriver extends App {
-  def usage = "Usage: java " + this.getClass + " TEST_CLASS TEST_METHOD TEST_INPUT_FILE AFL_TO_JAVA_PIPE JAVA_TO_AFL_PIPE"
-  require(args.length == 5, usage)
+  def usage = "Usage: java " + this.getClass + " FIRRTL TEST_INPUT_FILE AFL_TO_JAVA_PIPE JAVA_TO_AFL_PIPE"
+  require(args.length == 4, usage + "\nNOT: " + args.mkString(" "))
 
+  val firrtlSrc = args(0)
+  val inputFile = os.pwd / args(1)
+  val (a2jPipe, j2aPipe) = (os.pwd / args(2), os.pwd / args(3))
+
+  // load the fuzz target
+  val target = Rfuzz.firrtlToTarget(firrtlSrc, "test_run_dir/rfuzz_with_afl")
+  fuzz(target)
+
+  def fuzz(target: FuzzTarget): Unit = {
+    println("Ready to fuzz! Waiting for someone to open the fifos!")
+
+    // connect to the afl proxy
+    val proxyInput = os.read.inputStream(a2jPipe)
+    val proxyOutput = os.write.outputStream(j2aPipe)
+
+    // fuzz
+    while (true) {
+      println("Waiting for input.")
+      waitForAFL(proxyInput)
+      println("Executing input.")
+      val in = os.read.inputStream(inputFile)
+      val coverage = target.run(in)
+      in.close()
+      println(s"Sending coverage feedback. ($coverage)")
+      handleResult(proxyOutput, coverage.toArray)
+    }
+  }
+
+  private def waitForAFL(proxyInput: InputStream): Unit = {
+    // Get a 4-byte signal from AFL
+    val signal = new Array[Byte](4)
+    val received = proxyInput.read(signal, 0, 4)
+    if (received != 4) throw new RuntimeException("Could not read `ready` from AFL")
+  }
+
+  private def handleResult(proxyOutput: OutputStream, coverage: Array[Byte]): Unit = {
+    val result = Result.Success // TODO
+    val status = Result.toStatus(result)
+    proxyOutput.write(status) // TODO: endianess?
+    proxyOutput.write(coverage)
+    proxyOutput.flush()
+  }
 }
 
-/**
- * A front-end that uses AFL for guided fuzzing.
- *
- * An instance of this class actually communicates with a proxy that
- * sits between AFL and JQF. The proxy is the target program launched by
- * AFL; it passes messages back and forth between AFL and JQF and
- * helps populate the shared memory coverage buffer that the JVM cannot
- * access.
- *
- * @author Rohan Padhye and Caroline Lemieux (adapted to Scala by Kevin Laeufer)
- */
-private class AFLGuidance(inputFile: os.Path, inPipe: os.Path, outPipe: os.Path) {
-
+object Result extends Enumeration {
+  val Success, Invalid, Failure, Timeout = Value
+  def toStatus(v: Result.Value): Int = v match {
+    case Success => 0
+    case Invalid =>
+      // For invalid inputs, we send a non-zero return status
+      // in the second smallest byte, which is the program's return status
+      // for programs that exit successfully
+      1 << 8
+    case Failure =>
+      // For failure, the exit value is non-zero in LSB to simulate exit with signal
+      6 // SIGABRT
+    case Timeout =>
+      // For timeouts, we mock AFL's behavior of having killed the target
+      // with a SIGKILL signal
+      9 // SIGKILL
+  }
 }
