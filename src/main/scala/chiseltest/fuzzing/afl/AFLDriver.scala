@@ -51,9 +51,14 @@ object AFLDriver extends App {
   println(s"Loading and instrumenting $firrtlSrc...")
   val target = Rfuzz.firrtlToTarget(firrtlSrc, "test_run_dir/rfuzz_with_afl")
   println("Ready to fuzz! Waiting for someone to open the fifos!")
-  fuzz(target)
+  AFLProxy.fuzz(target, a2jPipe, j2aPipe, inputFile)
 
-  def fuzz(target: FuzzTarget): Unit = {
+
+}
+
+/** Communicates with the AFLProxy written by Rohan Padhye and Caroline Lemieux for the JQF project */
+object AFLProxy {
+  def fuzz(target: FuzzTarget, a2jPipe: os.Path, j2aPipe: os.Path, inputFile: os.Path): Unit = {
     // connect to the afl proxy
     val proxyInput = os.read.inputStream(a2jPipe)
     val proxyOutput = os.write.outputStream(j2aPipe)
