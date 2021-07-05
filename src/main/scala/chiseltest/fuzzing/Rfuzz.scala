@@ -19,7 +19,8 @@ object Rfuzz {
   def firrtlToTarget(filename: String, targetDir: String): FuzzTarget = {
     val state = loadFirrtl(filename, targetDir)
     val info = TopmoduleInfo(state.circuit)
-    val dut = VerilatorSimulator.createContext(state)
+    val dut = TreadleSimulator.createContext(state)
+    //val dut = VerilatorSimulator.createContext(state)
     new RfuzzTarget(dut, info)
   }
 
@@ -42,7 +43,12 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
   require(info.inputs.exists(_._1 == "reset"))
 
   private val clock = info.clocks.head
-  private def step(): Unit = dut.step(clock, 1)
+  private def step(): Unit = {
+    dut.step(clock, 1)
+    cycles += 1
+  }
+  private var cycles: Long = 0
+  private var resetCycles: Long = 0
 
   private def setInputsToZero(): Unit = {
     info.inputs.foreach { case (n, _) => dut.poke(n, 0)}
@@ -52,12 +58,14 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
     dut.poke(MetaReset, 1)
     step()
     dut.poke(MetaReset, 0)
+    resetCycles += 1
   }
 
   private def reset(): Unit = {
     dut.poke("reset", 1)
     step()
     dut.poke("reset", 0)
+    resetCycles += 1
   }
 
   private val inputBits = info.inputs.map(_._2).sum
@@ -100,5 +108,10 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
     getCoverage()
   }
 
-  override def finish(): Unit = dut.finish()
+  override def finish(verbose: Boolean): Unit = {
+    dut.finish()
+    if(verbose) {
+      println(s"Executed $cycles target cycles (incl. $resetCycles reset cycles).")
+    }
+  }
 }

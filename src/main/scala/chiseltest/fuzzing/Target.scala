@@ -7,5 +7,5 @@ package chiseltest.fuzzing
 /** A common interface for a fuzzing target. */
 trait FuzzTarget {
   def run(input: java.io.InputStream): Seq[Byte]
-  def finish(): Unit // clean up
+  def finish(verbose: Boolean = false): Unit // clean up
 }

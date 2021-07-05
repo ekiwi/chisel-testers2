@@ -39,6 +39,7 @@ import java.io.{InputStream, OutputStream}
  *  Based on code written by Rohan Padhye and Caroline Lemieux for the JQF project
  * */
 object AFLDriver extends App {
+  val CoverageMapSize = 1 << 16
   def usage = "Usage: java " + this.getClass + " FIRRTL TEST_INPUT_FILE AFL_TO_JAVA_PIPE JAVA_TO_AFL_PIPE"
   require(args.length == 4, usage + "\nNOT: " + args.mkString(" "))
 
@@ -47,42 +48,61 @@ object AFLDriver extends App {
   val (a2jPipe, j2aPipe) = (os.pwd / args(2), os.pwd / args(3))
 
   // load the fuzz target
+  println(s"Loading and instrumenting $firrtlSrc...")
   val target = Rfuzz.firrtlToTarget(firrtlSrc, "test_run_dir/rfuzz_with_afl")
+  println("Ready to fuzz! Waiting for someone to open the fifos!")
   fuzz(target)
 
   def fuzz(target: FuzzTarget): Unit = {
-    println("Ready to fuzz! Waiting for someone to open the fifos!")
-
     // connect to the afl proxy
     val proxyInput = os.read.inputStream(a2jPipe)
     val proxyOutput = os.write.outputStream(j2aPipe)
 
     // fuzz
-    while (true) {
-      println("Waiting for input.")
-      waitForAFL(proxyInput)
-      println("Executing input.")
-      val in = os.read.inputStream(inputFile)
-      val coverage = target.run(in)
-      in.close()
-      println(s"Sending coverage feedback. ($coverage)")
-      handleResult(proxyOutput, coverage.toArray)
+    try {
+      while (waitForAFL(proxyInput)) {
+        // println("Waiting for input.")
+
+        // println("Executing input.")
+        val in = os.read.inputStream(inputFile)
+        val coverage = target.run(in)
+        in.close()
+        // println(s"Sending coverage feedback. ($coverage)")
+        handleResult(proxyOutput, coverage.toArray)
+      }
+    } catch {
+      case _: java.io.IOException =>
     }
+
+    target.finish(verbose = true)
   }
 
-  private def waitForAFL(proxyInput: InputStream): Unit = {
+  private def waitForAFL(proxyInput: InputStream): Boolean = {
     // Get a 4-byte signal from AFL
     val signal = new Array[Byte](4)
     val received = proxyInput.read(signal, 0, 4)
-    if (received != 4) throw new RuntimeException("Could not read `ready` from AFL")
+    received == 4
   }
 
   private def handleResult(proxyOutput: OutputStream, coverage: Array[Byte]): Unit = {
+    require(coverage.length < CoverageMapSize)
     val result = Result.Success // TODO
     val status = Result.toStatus(result)
-    proxyOutput.write(status) // TODO: endianess?
+    writeInt(proxyOutput, status)
+    // indicate how many bytes we are going to send + 1
+    writeInt(proxyOutput, coverage.length + 1)
+    // send one dummy byte to avoid the "No instrumentation detected" error from AFL
+    proxyOutput.write(1)
+    // send actual coverage bytes
     proxyOutput.write(coverage)
     proxyOutput.flush()
+  }
+
+  private def writeInt(out: OutputStream, value: Int): Unit = {
+    val buf = java.nio.ByteBuffer.allocate(4)
+    buf.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    buf.putInt(value)
+    out.write(buf.array())
   }
 }
 
