@@ -58,6 +58,8 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
   }
   private var cycles: Long = 0
   private var resetCycles: Long = 0
+  private var totalTime: Long = 0
+  private var coverageTime: Long = 0
 
   private def setInputsToZero(): Unit = {
     info.inputs.foreach { case (n, _) => dut.poke(n, 0)}
@@ -101,6 +103,7 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
   }
 
   override def run(input: java.io.InputStream): Seq[Byte] = {
+    val start = System.nanoTime()
     setInputsToZero()
     metaReset()
     reset()
@@ -114,13 +117,23 @@ class RfuzzTarget(dut: SimulatorContext, info: TopmoduleInfo) extends FuzzTarget
       inputBytes = pop(input)
     }
 
-    getCoverage()
+    val startCoverage = System.nanoTime()
+    val c = getCoverage()
+    val end = System.nanoTime()
+    totalTime += (end - start)
+    coverageTime += (end - startCoverage)
+    c
   }
 
+  private def ms(i: Long): Long = i / 1000 / 1000
   override def finish(verbose: Boolean): Unit = {
     dut.finish()
     if(verbose) {
       println(s"Executed $cycles target cycles (incl. $resetCycles reset cycles).")
+      println(s"Total time in simulator: ${ms(totalTime)}ms")
+      println(s"Total time for getCoverage: ${ms(coverageTime)}ms (${coverageTime.toDouble / totalTime.toDouble * 100.0}%)")
+      val MHz = cycles.toDouble * 1000.0 / totalTime.toDouble
+      println(s"$MHz MHz")
     }
   }
 }
