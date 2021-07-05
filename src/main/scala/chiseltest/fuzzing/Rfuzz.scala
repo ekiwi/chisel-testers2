@@ -1,18 +1,27 @@
+// Copyright 2021 The Regents of the University of California
+// released under BSD 3-Clause License
+// author: Kevin Laeufer <laeufer@cs.berkeley.edu>
+
 package chiseltest.fuzzing
 
 import chiseltest.simulator._
 import firrtl._
 import firrtl.options.{Dependency, TargetDirAnnotation}
 import firrtl.stage._
+import logger.{LogLevel, LogLevelAnnotation}
 
 object Rfuzz {
 
   val DefaultAnnotations = Seq(
     RunFirrtlTransformAnnotation(Dependency(pass.MuxToggleCoverage)),
     RunFirrtlTransformAnnotation(Dependency(pass.MetaResetPass)),
+    RunFirrtlTransformAnnotation(Dependency(pass.RemovePrintfPass)),
+    RunFirrtlTransformAnnotation(Dependency(pass.AssertSignalPass)),
     RunFirrtlTransformAnnotation(Dependency[LowFirrtlEmitter]),
     // if we use verilator, we want to use JNI
     VerilatorUseJNI,
+    // debugging output
+    // LogLevelAnnotation(LogLevel.Info),
   )
 
 

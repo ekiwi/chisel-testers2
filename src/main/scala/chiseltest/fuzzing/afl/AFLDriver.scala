@@ -39,7 +39,6 @@ import java.io.{InputStream, OutputStream}
  *  Based on code written by Rohan Padhye and Caroline Lemieux for the JQF project
  * */
 object AFLDriver extends App {
-  val CoverageMapSize = 1 << 16
   def usage = "Usage: java " + this.getClass + " FIRRTL TEST_INPUT_FILE AFL_TO_JAVA_PIPE JAVA_TO_AFL_PIPE"
   require(args.length == 4, usage + "\nNOT: " + args.mkString(" "))
 
@@ -58,6 +57,7 @@ object AFLDriver extends App {
 
 /** Communicates with the AFLProxy written by Rohan Padhye and Caroline Lemieux for the JQF project */
 object AFLProxy {
+  val CoverageMapSize = 1 << 16
   def fuzz(target: FuzzTarget, a2jPipe: os.Path, j2aPipe: os.Path, inputFile: os.Path): Unit = {
     // connect to the afl proxy
     val proxyInput = os.read.inputStream(a2jPipe)
